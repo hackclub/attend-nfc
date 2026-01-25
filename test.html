@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>NFC Bridge Test</title>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 600px; margin: 40px auto; padding: 20px; }
+    #status { padding: 10px; border-radius: 6px; margin: 10px 0; }
+    .connected { background: #d1fae5; color: #065f46; }
+    .disconnected { background: #fee2e2; color: #991b1b; }
+    .connecting { background: #fef3c7; color: #92400e; }
+    #log { background: #1f2937; color: #e5e7eb; padding: 15px; border-radius: 6px; height: 300px; overflow-y: auto; font-family: monospace; font-size: 13px; }
+    button { background: #3b82f6; color: white; border: none; padding: 10px 20px; border-radius: 6px; cursor: pointer; margin: 5px; }
+    button:hover { background: #2563eb; }
+    button:disabled { background: #9ca3af; cursor: not-allowed; }
+    input { padding: 10px; border: 1px solid #d1d5db; border-radius: 6px; width: 300px; }
+  </style>
+</head>
+<body>
+  <h1>🔌 NFC Bridge Test</h1>
+  
+  <div id="status" class="disconnected">Disconnected</div>
+  
+  <div>
+    <button onclick="connect()" id="connectBtn">Connect</button>
+    <button onclick="disconnect()" id="disconnectBtn" disabled>Disconnect</button>
+    <button onclick="getStatus()">Get Status</button>
+    <button onclick="ping()">Ping</button>
+  </div>
+  
+  <h3>Write Dual Records to NFC Tag</h3>
+  <div style="margin-bottom: 10px;">
+    <label>Slack ID: </label>
+    <input type="text" id="slackId" placeholder="U1234567890" style="width: 150px;" />
+  </div>
+  <div style="margin-bottom: 10px;">
+    <label>Attend Token: </label>
+    <input type="text" id="attendToken" placeholder="550e8400-e29b-41d4-a716-446655440000" style="width: 300px;" />
+  </div>
+  <div>
+    <button onclick="writeDual()">Write Dual Records</button>
+    <button onclick="writeUrlOnly()">Write URL Only (legacy)</button>
+  </div>
+  
+  <h3>Log</h3>
+  <div id="log"></div>
+  
+  <script>
+    let ws = null;
+    
+    function log(msg, type = 'info') {
+      const el = document.getElementById('log');
+      const time = new Date().toLocaleTimeString();
+      const color = type === 'recv' ? '#86efac' : type === 'send' ? '#93c5fd' : '#e5e7eb';
+      el.innerHTML += `<div style="color:${color}">[${time}] ${msg}</div>`;
+      el.scrollTop = el.scrollHeight;
+    }
+    
+    function updateStatus(status, msg) {
+      const el = document.getElementById('status');
+      el.className = status;
+      el.textContent = msg;
+      document.getElementById('connectBtn').disabled = status === 'connected';
+      document.getElementById('disconnectBtn').disabled = status !== 'connected';
+    }
+    
+    function connect() {
+      updateStatus('connecting', 'Connecting...');
+      log('Connecting to ws://localhost:9876...');
+      
+      try {
+        ws = new WebSocket('ws://localhost:9876');
+        
+        ws.onopen = () => {
+          updateStatus('connected', 'Connected to NFC Bridge');
+          log('Connected!', 'recv');
+        };
+        
+        ws.onclose = () => {
+          updateStatus('disconnected', 'Disconnected');
+          log('Connection closed');
+          ws = null;
+        };
+        
+        ws.onerror = (e) => {
+          updateStatus('disconnected', 'Connection failed - is the bridge running?');
+          log('Error: ' + e.message);
+        };
+        
+        ws.onmessage = (e) => {
+          log('← ' + e.data, 'recv');
+          
+          try {
+            const data = JSON.parse(e.data);
+            if (data.type === 'tag_read') {
+              log('🏷️ TAG: UID=' + data.tag.uid, 'recv');
+              if (data.tag.ndefUrl) log('   URL: ' + data.tag.ndefUrl, 'recv');
+              if (data.tag.attendToken) log('   Attend Token: ' + data.tag.attendToken, 'recv');
+            }
+          } catch {}
+        };
+      } catch (e) {
+        updateStatus('disconnected', 'Failed to connect');
+        log('Error: ' + e.message);
+      }
+    }
+    
+    function disconnect() {
+      if (ws) ws.close();
+    }
+    
+    function send(msg) {
+      if (!ws || ws.readyState !== WebSocket.OPEN) {
+        log('Not connected!');
+        return;
+      }
+      const json = JSON.stringify(msg);
+      log('→ ' + json, 'send');
+      ws.send(json);
+    }
+    
+    function ping() {
+      send({ action: 'ping' });
+    }
+    
+    function getStatus() {
+      send({ action: 'status' });
+    }
+    
+    function writeDual() {
+      const slackId = document.getElementById('slackId').value;
+      const attendToken = document.getElementById('attendToken').value;
+      if (!slackId || !attendToken) {
+        log('Enter both Slack ID and Attend Token!');
+        return;
+      }
+      send({ 
+        action: 'write', 
+        badge_url: 'https://badge.hackclub.com/t/' + slackId,
+        attend_token: attendToken 
+      });
+    }
+    
+    function writeUrlOnly() {
+      const slackId = document.getElementById('slackId').value;
+      if (!slackId) {
+        log('Enter a Slack ID!');
+        return;
+      }
+      send({ action: 'write', url: 'https://badge.hackclub.com/t/' + slackId });
+    }
+    
+    // Auto-connect on load
+    setTimeout(connect, 500);
+  </script>
+</body>
+</html>
