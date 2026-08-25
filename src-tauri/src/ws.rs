@@ -59,9 +59,10 @@ async fn handle_connection(core: AppCore, stream: TcpStream) -> Result<(), ()> {
     core.push_state();
 
     let _ = sink
-        .send(Message::text(
-            r#"{"type":"connected","message":"Attend NFC Bridge connected","version":"2.0.0"}"#,
-        ))
+        .send(Message::text(format!(
+            r#"{{"type":"connected","message":"Attend NFC Bridge connected","version":"{}"}}"#,
+            env!("CARGO_PKG_VERSION")
+        )))
         .await;
 
     let mut rx = core.broadcast.subscribe();

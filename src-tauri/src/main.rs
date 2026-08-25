@@ -113,6 +113,7 @@ fn main() {
         .expect("error while building tauri application")
         .run(|app, event| match event {
             // macOS: clicking the dock icon reopens the window
+            #[cfg(target_os = "macos")]
             tauri::RunEvent::Reopen { .. } => show_main_window(app),
             // Keep running in the tray when all windows are closed
             tauri::RunEvent::ExitRequested { api, code, .. } => {
