@@ -218,3 +218,7 @@ await bridge.connect();
 1. Make sure the bridge is running (check the tray icon) and turned on
 2. Check if another app is using port 9876
 3. Try restarting the bridge app
+
+## License
+
+[GPL-3.0-or-later](LICENSE)
