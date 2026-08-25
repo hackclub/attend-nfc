@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Attend NFC Bridge</title>
+  <style>
+    :root {
+      --bg: #f5f5f7;
+      --fg: #1d1d1f;
+      --secondary: #6e6e73;
+      --card: #ffffff;
+      --border: #e5e5ea;
+      --green: #34c759;
+      --orange: #ff9500;
+      --red: #ff3b30;
+      --gray: #8e8e93;
+      --accent: #ec3750;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #1e1e20;
+        --fg: #f5f5f7;
+        --secondary: #98989d;
+        --card: #2c2c2e;
+        --border: #3a3a3c;
+      }
+    }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body { height: 100%; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Ubuntu, sans-serif;
+      background: var(--bg);
+      color: var(--fg);
+      padding: 20px;
+      font-size: 13px;
+      user-select: none;
+      -webkit-user-select: none;
+      cursor: default;
+    }
+    h1 { font-size: 18px; font-weight: 600; margin-bottom: 14px; }
+    .rows { display: flex; flex-direction: column; gap: 9px; margin-bottom: 14px; }
+    .row { display: flex; align-items: baseline; gap: 8px; }
+    .dot { font-size: 11px; flex-shrink: 0; }
+    .dot.green { color: var(--green); }
+    .dot.orange { color: var(--orange); }
+    .dot.red { color: var(--red); }
+    .dot.gray { color: var(--gray); }
+    .card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 10px 12px;
+      margin-bottom: 14px;
+    }
+    .card h2 {
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--secondary);
+      text-transform: uppercase;
+      letter-spacing: 0.4px;
+      margin-bottom: 6px;
+    }
+    #last-scan {
+      font-size: 12px;
+      color: var(--secondary);
+      line-height: 1.5;
+      word-break: break-all;
+      user-select: text;
+      -webkit-user-select: text;
+      min-height: 36px;
+    }
+    .buttons { display: flex; gap: 8px; }
+    button {
+      font: inherit;
+      white-space: nowrap;
+      padding: 6px 14px;
+      border-radius: 6px;
+      border: 1px solid var(--border);
+      background: var(--card);
+      color: var(--fg);
+      cursor: pointer;
+    }
+    button:hover { filter: brightness(0.96); }
+    button:active { filter: brightness(0.9); }
+    #toggle.on { background: var(--accent); border-color: var(--accent); color: #fff; }
+    #copied { color: var(--green); font-size: 12px; align-self: center; opacity: 0; transition: opacity 0.2s; }
+    #copied.visible { opacity: 1; }
+  </style>
+</head>
+<body>
+  <h1>Attend NFC Bridge</h1>
+
+  <div class="rows">
+    <div class="row"><span id="server-dot" class="dot gray">●</span><span id="server-label">Starting...</span></div>
+    <div class="row"><span id="reader-dot" class="dot gray">●</span><span id="reader-label">Looking for readers...</span></div>
+    <div class="row"><span class="dot" style="visibility:hidden">●</span><span id="connections-label">Browser connections: 0</span></div>
+  </div>
+
+  <div class="card">
+    <h2>Last scan</h2>
+    <div id="last-scan">No tags scanned yet</div>
+  </div>
+
+  <div class="buttons">
+    <button id="toggle" class="on">Turn Off</button>
+    <button id="reconnect">Reconnect Reader</button>
+    <button id="copy">Copy WS URL</button>
+    <span id="copied">Copied!</span>
+  </div>
+
+  <script>
+    const { invoke } = window.__TAURI__.core;
+    const { listen } = window.__TAURI__.event;
+
+    const el = (id) => document.getElementById(id);
+
+    function setDot(dot, color) {
+      dot.className = "dot " + color;
+    }
+
+    function render(s) {
+      const serverDot = el("server-dot"), serverLabel = el("server-label");
+      const readerDot = el("reader-dot"), readerLabel = el("reader-label");
+
+      if (!s.enabled) {
+        setDot(serverDot, "gray");
+        serverLabel.textContent = "Bridge is off";
+        setDot(readerDot, "gray");
+        readerLabel.textContent = "—";
+      } else if (s.serverError) {
+        setDot(serverDot, "red");
+        serverLabel.textContent = s.serverError;
+      } else if (s.serverRunning) {
+        setDot(serverDot, "green");
+        serverLabel.textContent = "Running on ws://localhost:9876";
+      } else {
+        setDot(serverDot, "orange");
+        serverLabel.textContent = "Starting...";
+      }
+
+      if (s.enabled) {
+        if (s.readerNames.length > 0) {
+          setDot(readerDot, "green");
+          readerLabel.textContent = s.readerNames.join(", ");
+        } else {
+          setDot(readerDot, "orange");
+          readerLabel.textContent = "No reader connected — plug in your NFC reader";
+        }
+      }
+
+      el("connections-label").textContent = "Browser connections: " + s.connections;
+
+      if (s.lastScan) {
+        const t = s.lastScan;
+        const lines = [new Date(t.timestamp).toLocaleTimeString() + "  UID " + t.uid];
+        if (t.ndefUrl) lines.push(t.ndefUrl);
+        if (t.attendToken) lines.push("token: " + t.attendToken);
+        if (t.ndefText) lines.push(t.ndefText);
+        el("last-scan").textContent = lines.join("\n");
+        el("last-scan").style.whiteSpace = "pre-line";
+      }
+
+      const toggle = el("toggle");
+      toggle.textContent = s.enabled ? "Turn Off" : "Turn On";
+      toggle.classList.toggle("on", !s.enabled);
+    }
+
+    listen("state", (e) => render(e.payload));
+    invoke("get_state").then(render);
+
+    el("toggle").addEventListener("click", () => invoke("toggle_bridge"));
+    el("reconnect").addEventListener("click", () => invoke("reconnect_reader"));
+    el("copy").addEventListener("click", async () => {
+      const url = "ws://localhost:9876";
+      try {
+        await navigator.clipboard.writeText(url);
+      } catch {
+        const ta = document.createElement("textarea");
+        ta.value = url;
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand("copy");
+        ta.remove();
+      }
+      el("copied").classList.add("visible");
+      setTimeout(() => el("copied").classList.remove("visible"), 1500);
+    });
+  </script>
+</body>
+</html>

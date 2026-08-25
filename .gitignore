@@ -1,5 +1,6 @@
+node_modules/
 .build/
-.swiftpm/
-*.xcodeproj
-.DS_Store
+src-tauri/target/
+src-tauri/gen/
 dist/
+.DS_Store
