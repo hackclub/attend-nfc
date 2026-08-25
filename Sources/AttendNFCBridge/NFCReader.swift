@@ -29,6 +29,7 @@ class NFCReader {
     private var lastReadTime: Date?
     private var isWriting = false
     private let writeLock = NSLock()
+    private var notifiedConnected = false
     
     private let debounceInterval: TimeInterval = 1.5
     private let pollQueue = DispatchQueue(label: "nfc-poll-queue")
@@ -64,28 +65,49 @@ class NFCReader {
     }
     
     private func connectToReader() {
+        guard context == 0 else { return }
+
         let result = pcsc_establish_context(&context)
         guard result == PCSC_SUCCESS else {
             delegate?.nfcReader(self, didEncounterError: "Failed to establish PC/SC context")
             return
         }
-        
+
+        refreshReaderPresence()
+    }
+
+    // Re-lists readers so hot-plug and unplug are noticed; delegate is only
+    // called on actual state transitions.
+    private func refreshReaderPresence() {
+        guard context != 0 else { return }
+
         var readersLen: UInt32 = 256
         var readers = [CChar](repeating: 0, count: Int(readersLen))
-        
+
         let listResult = pcsc_list_readers(context, &readers, &readersLen)
-        guard listResult == PCSC_SUCCESS, readersLen > 0 else {
-            delegate?.nfcReaderDidDisconnect(self)
-            return
+
+        if listResult == PCSC_SUCCESS, readersLen > 0 {
+            let name = String(cString: readers)
+            if !name.isEmpty {
+                if name != readerName || !notifiedConnected {
+                    readerName = name
+                    notifiedConnected = true
+                    delegate?.nfcReaderDidConnect(self, name: name)
+                }
+                return
+            }
         }
-        
-        let readerName = String(cString: readers)
-        
-        if !readerName.isEmpty {
-            self.readerName = readerName
-            delegate?.nfcReaderDidConnect(self, name: readerName)
-        } else {
+
+        if notifiedConnected || readerName != nil {
+            readerName = nil
+            notifiedConnected = false
             delegate?.nfcReaderDidDisconnect(self)
+        }
+
+        // A failed context can't recover; drop it so the next poll rebuilds it
+        if listResult == PCSC_ERROR_COMMUNICATION {
+            pcsc_release_context(context)
+            context = 0
         }
     }
     
@@ -100,6 +122,7 @@ class NFCReader {
         }
         readerName = nil
         lastUID = nil
+        notifiedConnected = false
     }
     
     private func pollForCard() {
@@ -107,10 +130,12 @@ class NFCReader {
         if context == 0 {
             connectToReader()
         }
-        
-        guard isRunning, context != 0, let currentReader = readerName else {
-            return
-        }
+
+        guard isRunning, context != 0 else { return }
+
+        refreshReaderPresence()
+
+        guard let currentReader = readerName else { return }
         
         // Don't poll while writing
         guard !isWriting else { return }

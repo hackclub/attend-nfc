@@ -9,6 +9,9 @@ A macOS menu bar app that bridges USB NFC readers (like ACR1552) to web browsers
 - Writes NDEF URL records to NFC tags
 - Exposes a local WebSocket server on `ws://localhost:9876`
 - Menu bar status indicator with connection info
+- On/off toggle from the menu bar (stops the server and reader polling)
+- Live reader detection — the icon turns green when a reader is plugged in,
+  orange when the bridge is on but no reader is present, gray when off
 
 ## Supported Readers
 
@@ -21,7 +24,14 @@ A macOS menu bar app that bridges USB NFC readers (like ACR1552) to web browsers
 ./build.sh
 ```
 
-Or manually:
+This produces a double-clickable app bundle at `dist/Attend NFC Bridge.app`
+(ad-hoc signed). To install it:
+
+```bash
+cp -R "dist/Attend NFC Bridge.app" /Applications/
+```
+
+Or build just the binary manually:
 
 ```bash
 swift build -c release
@@ -32,13 +42,16 @@ The binary will be at `.build/release/AttendNFCBridge`.
 ## Running
 
 ```bash
-.build/release/AttendNFCBridge
+open "dist/Attend NFC Bridge.app"
 ```
 
 The app will appear in your menu bar with an NFC icon. It shows:
 - Server status (running on port 9876)
-- Reader connection status
+- Reader connection status (updates live when you plug/unplug the reader)
 - Number of active WebSocket connections
+- Turn Off / Turn On — stops or restarts the WebSocket server and reader polling
+
+Icon colors: green = reader connected, orange = bridge on but no reader, gray = bridge off.
 
 ## WebSocket Protocol
 
